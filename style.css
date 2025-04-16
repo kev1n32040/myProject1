@@ -1,0 +1,90 @@
+@font-face {
+    font-family: 'Scrawl Regular';
+    src: url('fonts/VAGGummyBites.woff2') format('woff2'),
+         url('fonts/VAGGummyBites.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+body {
+    font-family: 'Scrawl Regular', sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 100%);
+}
+
+.clicker-container {
+    text-align: center;
+    padding: 20px;
+    background-color: white;
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+}
+
+#clickBtn {
+    padding: 15px 30px;
+    font-size: 20px;
+    background-color: #ff6b6b;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+#clickBtn:active {
+    transform: scale(0.95);
+}
+
+#score {
+    font-size: 24px;
+    color: #333;
+}
+
+.notification {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #6bff77;
+    color: white;
+    padding: 15px 30px;
+    border-radius: 5px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.notification.show {
+    opacity: 1;
+}
+
+.upgrade-container {
+    margin-top: 20px;
+}
+
+.upgrade-button {
+    padding: 10px 20px;
+    font-size: 16px;
+    background-color: #ff8e8e;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: none;
+}
+
+.upgrade-button.show {
+    display: inline-block;
+}
+
+.upgrade-button:hover {
+    background-color: #ff6b6b;
+    transform: scale(1.05);
+}
