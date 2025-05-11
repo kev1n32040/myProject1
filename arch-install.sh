@@ -1,51 +1,96 @@
 #!/bin/bash
 
-set -e
+# Arch Linux Auto Install Script (BIOS + UEFI)
+# Timezone: Asia/Krasnoyarsk
+# Author: Keu1n (https://github.com/keu1n32040)
 
-echo "Installing in UEFI mode."
+set -euo pipefail
 
-# Удаляем все старые разделы
-umount -R /mnt || true
-sgdisk -Z /dev/sda
+# Variables
+disk="/dev/sda"
+hostname="archlinux"
+username="user"
+password="password"
+timezone="Asia/Krasnoyarsk"
+locale="en_US.UTF-8 UTF-8"
+locale_conf="en_US.UTF-8"
 
-# Создание новых GPT-разделов
-sgdisk -n 1:0:+300M -t 1:ef00 /dev/sda  # EFI
-sgdisk -n 2:0:0     -t 2:8300 /dev/sda  # Root
+# Check boot mode
+if [ -d /sys/firmware/efi ]; then
+    boot_mode="UEFI"
+else
+    boot_mode="BIOS"
+fi
 
-# Форматирование
-mkfs.fat -F32 /dev/sda1
-mkfs.ext4 -F /dev/sda2
+echo "Installing in $boot_mode mode."
 
-# Монтирование
-mount /dev/sda2 /mnt
-mkdir -p /mnt/boot/efi
-mount /dev/sda1 /mnt/boot/efi
+# Clear and partition disk
+wipefs -af "$disk"
+sgdisk -Zo "$disk"
 
-# Установка базовой системы
-pacstrap /mnt base linux linux-firmware grub efibootmgr networkmanager sudo
+if [ "$boot_mode" = "UEFI" ]; then
+    # UEFI partitions
+    sgdisk -n1:0:+300M -t1:ef00 "$disk"
+    sgdisk -n2:0:0     -t2:8300 "$disk"
+    part_boot="${disk}1"
+    part_root="${disk}2"
+else
+    # BIOS partitions
+    sgdisk -a 1 -n1:2048:+1M -t1:ef02 "$disk"   # BIOS boot partition
+    sgdisk -n2:0:0     -t2:8300 "$disk"
+    part_root="${disk}2"
+fi
 
-# Генерация fstab
+sleep 1
+
+# Format partitions
+if [ "$boot_mode" = "UEFI" ]; then
+    mkfs.fat -F32 "$part_boot"
+fi
+mkfs.ext4 -F "$part_root"
+
+# Mount
+mount "$part_root" /mnt
+if [ "$boot_mode" = "UEFI" ]; then
+    mkdir /mnt/boot
+    mount "$part_boot" /mnt/boot
+fi
+
+# Install base system
+pacstrap /mnt base linux linux-firmware bash sudo nano networkmanager grub efibootmgr
+
+# Generate fstab
 genfstab -U /mnt >> /mnt/etc/fstab
 
-# Настройка системы через chroot
+# Chroot and configure system
 arch-chroot /mnt /bin/bash <<EOF
-ln -sf /usr/share/zoneinfo/Asia/Krasnoyarsk /etc/localtime
+
+ln -sf /usr/share/zoneinfo/$timezone /etc/localtime
 hwclock --systohc
-echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+
+echo "$locale" > /etc/locale.gen
 locale-gen
-echo "LANG=en_US.UTF-8" > /etc/locale.conf
-echo "archlinux" > /etc/hostname
 
-# Сетевой конфиг
-cat > /etc/hosts <<EOL
-127.0.0.1   localhost
-::1         localhost
-127.0.1.1   archlinux.localdomain archlinux
-EOL
+echo "LANG=$locale_conf" > /etc/locale.conf
+echo "$hostname" > /etc/hostname
+echo -e "127.0.0.1\tlocalhost\n::1\tlocalhost\n127.0.1.1\t$hostname.localdomain\t$hostname" > /etc/hosts
 
-# Установка загрузчика
-grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB
+useradd -m -G wheel -s /bin/bash $username
+echo "$username:$password" | chpasswd
+echo "root:$password" | chpasswd
+
+sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
+
+systemctl enable NetworkManager
+
+if [ "$boot_mode" = "UEFI" ]; then
+    grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+else
+    grub-install --target=i386-pc "$disk"
+fi
+
 grub-mkconfig -o /boot/grub/grub.cfg
 EOF
 
-echo "Installation complete. You can now reboot."
+# Done
+echo "\nInstallation complete! You can reboot now."
