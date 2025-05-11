@@ -50,6 +50,13 @@ echo "$USERNAME:$PASSWORD" | chpasswd
 echo "root:$PASSWORD" | chpasswd
 echo "%wheel ALL=(ALL) ALL" >> /etc/sudoers
 
+# Размонтировать все точки, если /mnt уже используется
+if mount | grep -q '/mnt'; then
+    echo "Размонтирование /mnt и всех подмонтированных точек..."
+    umount -R /mnt
+    sleep 2
+fi
+
 # Загрузчик
 grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
 grub-mkconfig -o /boot/grub/grub.cfg
