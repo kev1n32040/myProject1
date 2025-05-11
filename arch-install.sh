@@ -4,48 +4,48 @@ set -e
 
 echo "Installing in UEFI mode."
 
-# Unmount /dev/sda1 if it's already mounted
-if mount | grep -q "/dev/sda1"; then
-  echo "Unmounting /dev/sda1..."
-  umount -f /dev/sda1
-fi
+# Удаляем все старые разделы
+umount -R /mnt || true
+sgdisk -Z /dev/sda
 
-# Wipe the disk
-sgdisk --zap-all /dev/sda
+# Создание новых GPT-разделов
+sgdisk -n 1:0:+300M -t 1:ef00 /dev/sda  # EFI
+sgdisk -n 2:0:0     -t 2:8300 /dev/sda  # Root
 
-# Create partitions
-parted /dev/sda --script mklabel gpt
-parted /dev/sda --script mkpart ESP fat32 1MiB 300MiB
-parted /dev/sda --script set 1 boot on
-parted /dev/sda --script mkpart primary ext4 300MiB 100%
-
-# Format partitions
+# Форматирование
 mkfs.fat -F32 /dev/sda1
-mkfs.ext4 /dev/sda2
+mkfs.ext4 -F /dev/sda2
 
-# Mount
+# Монтирование
 mount /dev/sda2 /mnt
-mkdir /mnt/boot
-mount /dev/sda1 /mnt/boot
+mkdir -p /mnt/boot/efi
+mount /dev/sda1 /mnt/boot/efi
 
-# Set timezone and locale
-ln -sf /usr/share/zoneinfo/Asia/Krasnoyarsk /mnt/etc/localtime
-arch-chroot /mnt hwclock --systohc
-echo "en_US.UTF-8 UTF-8" >> /mnt/etc/locale.gen
-arch-chroot /mnt locale-gen
-echo "LANG=en_US.UTF-8" > /mnt/etc/locale.conf
+# Установка базовой системы
+pacstrap /mnt base linux linux-firmware grub efibootmgr networkmanager sudo
 
-# Hostname
-echo "archlinux" > /mnt/etc/hostname
-
-# Install base system
-pacstrap /mnt base linux linux-firmware grub efibootmgr
-
-# Generate fstab
+# Генерация fstab
 genfstab -U /mnt >> /mnt/etc/fstab
 
-# Install GRUB
-arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
-arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
+# Настройка системы через chroot
+arch-chroot /mnt /bin/bash <<EOF
+ln -sf /usr/share/zoneinfo/Asia/Krasnoyarsk /etc/localtime
+hwclock --systohc
+echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+locale-gen
+echo "LANG=en_US.UTF-8" > /etc/locale.conf
+echo "archlinux" > /etc/hostname
+
+# Сетевой конфиг
+cat > /etc/hosts <<EOL
+127.0.0.1   localhost
+::1         localhost
+127.0.1.1   archlinux.localdomain archlinux
+EOL
+
+# Установка загрузчика
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB
+grub-mkconfig -o /boot/grub/grub.cfg
+EOF
 
 echo "Installation complete. You can now reboot."
