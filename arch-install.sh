@@ -1,96 +1,51 @@
 #!/bin/bash
 
-# Arch Linux Auto Install Script (BIOS + UEFI)
-# Timezone: Asia/Krasnoyarsk
-# Author: Keu1n (https://github.com/keu1n32040)
+set -e
 
-set -euo pipefail
+echo "Installing in UEFI mode."
 
-# Variables
-disk="/dev/sda"
-hostname="archlinux"
-username="user"
-password="password"
-timezone="Asia/Krasnoyarsk"
-locale="en_US.UTF-8 UTF-8"
-locale_conf="en_US.UTF-8"
-
-# Check boot mode
-if [ -d /sys/firmware/efi ]; then
-    boot_mode="UEFI"
-else
-    boot_mode="BIOS"
+# Unmount /dev/sda1 if it's already mounted
+if mount | grep -q "/dev/sda1"; then
+  echo "Unmounting /dev/sda1..."
+  umount -f /dev/sda1
 fi
 
-echo "Installing in $boot_mode mode."
+# Wipe the disk
+sgdisk --zap-all /dev/sda
 
-# Clear and partition disk
-wipefs -af "$disk"
-sgdisk -Zo "$disk"
-
-if [ "$boot_mode" = "UEFI" ]; then
-    # UEFI partitions
-    sgdisk -n1:0:+300M -t1:ef00 "$disk"
-    sgdisk -n2:0:0     -t2:8300 "$disk"
-    part_boot="${disk}1"
-    part_root="${disk}2"
-else
-    # BIOS partitions
-    sgdisk -a 1 -n1:2048:+1M -t1:ef02 "$disk"   # BIOS boot partition
-    sgdisk -n2:0:0     -t2:8300 "$disk"
-    part_root="${disk}2"
-fi
-
-sleep 1
+# Create partitions
+parted /dev/sda --script mklabel gpt
+parted /dev/sda --script mkpart ESP fat32 1MiB 300MiB
+parted /dev/sda --script set 1 boot on
+parted /dev/sda --script mkpart primary ext4 300MiB 100%
 
 # Format partitions
-if [ "$boot_mode" = "UEFI" ]; then
-    mkfs.fat -F32 "$part_boot"
-fi
-mkfs.ext4 -F "$part_root"
+mkfs.fat -F32 /dev/sda1
+mkfs.ext4 /dev/sda2
 
 # Mount
-mount "$part_root" /mnt
-if [ "$boot_mode" = "UEFI" ]; then
-    mkdir /mnt/boot
-    mount "$part_boot" /mnt/boot
-fi
+mount /dev/sda2 /mnt
+mkdir /mnt/boot
+mount /dev/sda1 /mnt/boot
+
+# Set timezone and locale
+ln -sf /usr/share/zoneinfo/Asia/Krasnoyarsk /mnt/etc/localtime
+arch-chroot /mnt hwclock --systohc
+echo "en_US.UTF-8 UTF-8" >> /mnt/etc/locale.gen
+arch-chroot /mnt locale-gen
+echo "LANG=en_US.UTF-8" > /mnt/etc/locale.conf
+
+# Hostname
+echo "archlinux" > /mnt/etc/hostname
 
 # Install base system
-pacstrap /mnt base linux linux-firmware bash sudo nano networkmanager grub efibootmgr
+pacstrap /mnt base linux linux-firmware grub efibootmgr
 
 # Generate fstab
 genfstab -U /mnt >> /mnt/etc/fstab
 
-# Chroot and configure system
-arch-chroot /mnt /bin/bash <<EOF
+# Install GRUB
+arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
 
-ln -sf /usr/share/zoneinfo/$timezone /etc/localtime
-hwclock --systohc
-
-echo "$locale" > /etc/locale.gen
-locale-gen
-
-echo "LANG=$locale_conf" > /etc/locale.conf
-echo "$hostname" > /etc/hostname
-echo -e "127.0.0.1\tlocalhost\n::1\tlocalhost\n127.0.1.1\t$hostname.localdomain\t$hostname" > /etc/hosts
-
-useradd -m -G wheel -s /bin/bash $username
-echo "$username:$password" | chpasswd
-echo "root:$password" | chpasswd
-
-sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
-
-systemctl enable NetworkManager
-
-if [ "$boot_mode" = "UEFI" ]; then
-    grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
-else
-    grub-install --target=i386-pc "$disk"
-fi
-
-grub-mkconfig -o /boot/grub/grub.cfg
-EOF
-
-# Done
-echo "\nInstallation complete! You can reboot now."
+echo "Installation complete. You can now reboot."
